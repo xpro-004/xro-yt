@@ -34,7 +34,6 @@ export function renderHome(): string {
   tr:hover td { background:#101823; }
   a.dl { display:inline-block; padding:6px 11px; border-radius:8px; background:var(--acc2); color:#04121f; font-weight:600; text-decoration:none; font-size:12px; white-space:nowrap; }
   a.dl.alt { background:#2b3a4d; color:var(--fg); }
-  a.dl.merge { background:var(--grn); color:#04120a; }
   .tag { display:inline-block; padding:1px 7px; border-radius:6px; background:#22303f; color:var(--mut); font-size:11px; }
   .dir { display:flex; gap:6px; align-items:center; max-width:340px; }
   .dir input { flex:1; font:12px/1.3 ui-monospace,Menlo,Consolas,monospace; padding:5px 7px; border-radius:6px; border:1px solid var(--line); background:#0e141d; color:var(--mut); min-width:0; }
@@ -61,7 +60,7 @@ export function renderHome(): string {
 <body>
 <div class="wrap">
   <h1>Vidmate YT Downloader</h1>
-  <div class="sub">Search YouTube or paste a link / video id — then pick Audio, Video, or a muxed file.</div>
+  <div class="sub">Search YouTube or paste a link / video id — then pick Audio, Video, or All formats.</div>
 
   <form id="f">
     <input id="q" type="text" placeholder="Search YouTube, or paste a link / video id…" autocomplete="off" autofocus>
@@ -104,7 +103,7 @@ export function renderHome(): string {
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <div class="note">Direct URL = raw googlevideo link (expires). Download = proxied through this server (always works, Range/seek supported). For video-only rows, “+audio” muxes the best matching audio track into one file.</div>
+    <div class="note">Direct URL = raw googlevideo link (expires). Download = proxied through this server (always works, Range/seek supported). VISIONOS returns video and audio as separate tracks, so pick the Audio row for sound or the Video row for picture.</div>
   </div>
 </div>
 
@@ -118,9 +117,6 @@ function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&
 function row(f, base, v) {
   const dl = base + "/api/download?v=" + encodeURIComponent(v) + "&itag=" + f.itag + "&dl=1";
   const direct = f.directUrl;
-  const merge = f.kind === "video"
-    ? ' <a class="dl merge" href="' + base + "/api/merge?v=" + encodeURIComponent(v) + "&video=" + f.itag + '&dl=1" title="Merge with best matching audio">+audio</a>'
-    : '';
   const dims = f.width && f.height ? f.width + "×" + f.height : (f.audioSampleRate ? f.audioSampleRate + " Hz" : "");
   const fps = f.fps ? f.fps + "fps" : "";
   return '<tr>'
@@ -134,7 +130,7 @@ function row(f, base, v) {
     + '<td><div class="dir"><input readonly value="' + esc(direct) + '"><button class="copy" data-u="' + esc(direct) + '">Copy</button></div></td>'
     + '<td><a class="dl" href="' + dl + '">Download</a> '
     + '<a class="dl alt" href="' + base + "/api/download?v=" + encodeURIComponent(v) + "&itag=" + f.itag + '" target="_blank">Open</a>'
-    + merge + '</td></tr>';
+    + '</td></tr>';
 }
 
 function renderRows() {

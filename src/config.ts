@@ -54,6 +54,26 @@ export const config = {
     osName: "visionOS",
     osVersion: "1.3.0.22O473",
   },
+
+  /**
+   * Client for the YouTube Music catalogue (`music.youtube.com`). WEB_REMIX
+   * serves browse/search/next responses with the `music*Renderer` shapes the
+   * music routes parse. Keep it separate from `client`: VISIONOS headers must
+   * never be sent to the music host.
+   */
+  music: {
+    host: process.env.MUSIC_HOST ?? "https://music.youtube.com",
+    apiKey:
+      process.env.MUSIC_API_KEY ??
+      process.env.YT_MUSIC_API_KEY ??
+      "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30",
+    clientName: process.env.MUSIC_CLIENT_NAME ?? "WEB_REMIX",
+    clientVersion: process.env.MUSIC_CLIENT_VERSION ?? "1.20261115.14.00",
+    clientNameHeader: process.env.MUSIC_CLIENT_HEADER ?? "67",
+    userAgent:
+      process.env.MUSIC_USER_AGENT ??
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+  },
 } as const;
 
 export type Config = typeof config;

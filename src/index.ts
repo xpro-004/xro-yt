@@ -2,8 +2,9 @@ import express, { type Request, type Response } from "express";
 import { config } from "./config.js";
 import { getVideoInfo, searchYouTube, type FormatInfo, type SearchType } from "./innertube.js";
 import { streamMedia } from "./stream.js";
-import { mergeAndStream } from "./merge.js";
 import { renderHome } from "./home.js";
+import { musicRouter } from "./music-routes.js";
+import { upstreamCatalog } from "./catalog.js";
 
 const app = express();
 app.use(express.json());
@@ -39,10 +40,6 @@ function fmtPublic(base: string, v: { videoId: string }, f: FormatInfo) {
     directUrl: f.url,
     /** Same file, proxied through this server — use this one from a browser. */
     proxyUrl: `${base}/api/download?v=${encodeURIComponent(v.videoId)}&itag=${f.itag}`,
-    /** Video only: one-shot mux of this track with the best matching audio. */
-    mergeUrl: f.kind === "video"
-      ? `${base}/api/merge?v=${encodeURIComponent(v.videoId)}&video=${f.itag}`
-      : undefined,
   };
 }
 
@@ -57,10 +54,49 @@ app.get("/health", (_req, res) => {
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
     client: config.client.clientName,
     clientVersion: config.client.clientVersion,
+    musicClient: config.music.clientName,
     proxy: config.proxy || "direct",
     host: config.hosts[0],
   });
 });
+
+/**
+ * GET /api — catalogue of every upstream API this server calls, with the client,
+ * params and proxy requirement for each.
+ */
+app.get("/api", (_req, res) => {
+  const apis = upstreamCatalog();
+  res.json({
+    ok: true,
+    name: "vidmate-yt-api",
+    videoClient: `${config.client.clientName} ${config.client.clientVersion}`,
+    musicClient: `${config.music.clientName} ${config.music.clientVersion}`,
+    proxy: config.proxy || "direct",
+    count: apis.length,
+    apis,
+    routes: [
+      "GET /",
+      "GET /health",
+      "GET /api",
+      "GET /api/search?q=",
+      "GET /api/info?v=",
+      "GET /api/link?v=",
+      "GET /api/download?v=&itag=",
+      "GET /api/music/search?q=&type=",
+      "GET /api/music/home",
+      "GET /api/music/artist?id=",
+      "GET /api/music/artist/songs?id=",
+      "GET /api/music/album?id=",
+      "GET /api/music/playlist?id=",
+      "GET /api/music/song?id=",
+      "GET /api/music/lyrics?id=",
+      "GET /api/music/trending",
+      "GET /api/music/radio?id=",
+    ],
+  });
+});
+
+app.use("/api/music", musicRouter);
 
 /**
  * GET /api/info?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]
@@ -74,7 +110,9 @@ app.get("/api/info", async (req: Request, res: Response) => {
       res.type("html").send(renderHome());
       return;
     }
-    res.status(400).json({ ok: false, error: "missing query param: v (video id or URL)" });
+    // No `v`: describe the upstream APIs instead of erroring.
+    const apis = upstreamCatalog();
+    res.json({ ok: true, hint: "pass ?v=<id|url> for video info", count: apis.length, apis });
     return;
   }
   try {
@@ -133,8 +171,8 @@ app.get("/api/search", async (req: Request, res: Response) => {
           ...r,
           url: `https://www.youtube.com/watch?v=${r.videoId}`,
           infoUrl: `${base}/api/info?v=${encodeURIComponent(r.videoId)}`,
-          /** Full-quality video+audio muxed by the server (VISIONOS has no muxed track). */
-          downloadUrl: `${base}/api/merge?v=${encodeURIComponent(r.videoId)}`,
+          /** Best playable track, proxied (VISIONOS returns no muxed track). */
+          downloadUrl: `${base}/api/link?v=${encodeURIComponent(r.videoId)}`,
           /** Audio-only, proxied. */
           audioUrl: `${base}/api/link?v=${encodeURIComponent(r.videoId)}&format=audio`,
           /** Everything: formats, direct URLs, proxied links. */
@@ -183,7 +221,7 @@ app.get("/api/link", async (req: Request, res: Response) => {
     } else {
       const matchKind = wantKind === "any" ? candidates : candidates.filter((f) => f.kind === wantKind);
       // VISIONOS never returns a muxed track, so fall back to the best video-only
-      // track (callers should use /api/merge to get a playable file).
+      // track when the caller asks for one.
       candidates = matchKind.length > 0 || wantKind !== "muxed" ? matchKind : candidates.filter((f) => f.kind !== "audio");
       if (quality !== "best" && quality !== "worst") {
         const h = Number(quality);
@@ -225,10 +263,6 @@ app.get("/api/link", async (req: Request, res: Response) => {
         ? null
         : `${base}/api/download?v=${encodeURIComponent(info.videoId)}&itag=${audioChosen.itag}`,
       audioDirectUrl: chosen?.kind === "muxed" || !audioChosen ? null : audioChosen.url,
-      /** One-shot mux of the chosen video with its paired audio. */
-      mergeUrl: chosen && chosen.kind === "video"
-        ? `${base}/api/merge?v=${encodeURIComponent(info.videoId)}&video=${chosen.itag}`
-        : null,
     });
   } catch (err) {
     res.status(502).json({ ok: false, error: String(err instanceof Error ? err.message : err) });
@@ -274,60 +308,8 @@ app.get("/api/download", async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/merge?v=<id|url>[&video=<itag>][&audio=<itag>][&dl=1]
- * Downloads both tracks server-side and muxes them into one file. Omit `video`
- * to let the server pick the highest-quality video track.
+ * Unknown routes: HTML page for browsers, JSON route list for everything else.
  */
-app.get("/api/merge", async (req: Request, res: Response) => {
-  const input = String(req.query.v ?? req.query.url ?? req.query.id ?? "").trim();
-  if (!input) {
-    if (wantsHtml(req)) {
-      res.type("html").send(renderHome());
-      return;
-    }
-    res.status(400).json({ ok: false, error: "missing query param: v (video id or URL)" });
-    return;
-  }
-  try {
-    const info = await getVideoInfo(input);
-    const videoItag = req.query.video ? Number(req.query.video) : undefined;
-    const videoCandidates = info.formats.filter((f) => f.kind !== "audio");
-    const video = videoItag
-      ? videoCandidates.find((f) => f.itag === videoItag)
-      : videoCandidates.sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || b.bitrate - a.bitrate)[0];
-    if (!video) {
-      res.status(404).json({
-        ok: false,
-        error: videoItag ? `no video format with itag ${videoItag}` : "no video format available",
-      });
-      return;
-    }
-    // Prefer an audio track whose container matches the video (AAC-in-MP4 or
-    // Opus-in-WebM); mixing Opus into MP4 breaks many players.
-    const audios = info.formats.filter((f) => f.kind === "audio");
-    const audio =
-      (req.query.audio ? info.formats.find((f) => f.itag === Number(req.query.audio)) : undefined) ??
-      audios.filter((f) => f.container === video.container).sort((a, b) => b.bitrate - a.bitrate)[0] ??
-      audios.sort((a, b) => b.bitrate - a.bitrate)[0];
-    if (!audio) {
-      res.status(404).json({ ok: false, error: "no matching audio format" });
-      return;
-    }
-    if (req.query.dl !== undefined) {
-      const safe = info.title.replace(/[^\w.\- ]+/g, "_").slice(0, 80) || info.videoId;
-      const ext = video.container === "webm" && audio.container === "webm" ? "webm" : "mp4";
-      res.setHeader("Content-Disposition", `attachment; filename="${safe}_${video.quality}.${ext}"`);
-    }
-    await mergeAndStream(video, audio, res);
-  } catch (err) {
-    if (!res.headersSent) {
-      res.status(502).json({ ok: false, error: String(err instanceof Error ? err.message : err) });
-    } else {
-      res.end();
-    }
-  }
-});
-
 app.use((req, res) => {
   if (wantsHtml(req)) {
     res.status(404).type("html").send(renderHome());
@@ -336,7 +318,25 @@ app.use((req, res) => {
   res.status(404).json({
     ok: false,
     error: "not found",
-    routes: ["GET /", "GET /health", "GET /api/search?q=", "GET /api/info?v=", "GET /api/link?v=", "GET /api/download?v=&itag=", "GET /api/merge?v="],
+    routes: [
+      "GET /",
+      "GET /health",
+      "GET /api",
+      "GET /api/search?q=",
+      "GET /api/info?v=",
+      "GET /api/link?v=",
+      "GET /api/download?v=&itag=",
+      "GET /api/music/search?q=&type=",
+      "GET /api/music/home",
+      "GET /api/music/artist?id=",
+      "GET /api/music/artist/songs?id=",
+      "GET /api/music/album?id=",
+      "GET /api/music/playlist?id=",
+      "GET /api/music/song?id=",
+      "GET /api/music/lyrics?id=",
+      "GET /api/music/trending",
+      "GET /api/music/radio?id=",
+    ],
   });
 });
 

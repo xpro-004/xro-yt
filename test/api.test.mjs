@@ -3,8 +3,7 @@
  * over HTTP — no mocks. Needs network egress to the upstream API; set PROXY to
  * route it through a SOCKS5 proxy (e.g. WARP) when running on a datacenter host.
  *
- *   npm test                      # fast suite
- *   MERGE_TEST=1 npm test         # also exercise /api/merge (downloads a file)
+ *   npm test                      # full suite
  *   PORT=8799 PROXY=socks5://127.0.0.1:40000 npm test
  */
 import { test, before, after } from "node:test";
@@ -64,7 +63,7 @@ test("GET /api/search returns video results with ready-made links", async () => 
   assert.match(v.videoId, /^[A-Za-z0-9_-]{11}$/);
   assert.ok(v.title.length > 0, "title");
   assert.ok(v.thumbnail?.startsWith("http"), "thumbnail");
-  assert.match(v.downloadUrl, /\/api\/merge\?v=/);
+  assert.match(v.downloadUrl, /\/api\/link\?v=/);
   assert.match(v.audioUrl, /format=audio/);
   assert.match(v.infoUrl, /\/api\/info\?v=/);
   assert.equal(typeof v.lengthSeconds, "number");
@@ -120,7 +119,7 @@ test("GET /api/search rejects a bad type and a missing query", async () => {
   assert.equal(noQuery.body.ok, false);
 });
 
-test("GET /api/info lists formats with direct, proxied and merge links", async () => {
+test("GET /api/info lists formats with direct and proxied links", async () => {
   const { body } = await j("/api/info?v=iss_85SWLYA");
   assert.equal(body.ok, true);
   assert.ok(body.count > 0);
@@ -131,12 +130,10 @@ test("GET /api/info lists formats with direct, proxied and merge links", async (
   assert.ok(video, "a video-only format is present");
   assert.match(video.directUrl, /^https:/);
   assert.match(video.proxyUrl, /\/api\/download\?v=.*itag=/);
-  assert.match(video.mergeUrl, /\/api\/merge\?v=.*video=/);
   assert.ok(video.contentLength > 0, "content length known");
 
   const audio = body.formats.find((f) => f.kind === "audio");
   assert.ok(audio, "an audio-only format is present");
-  assert.equal(audio.mergeUrl, undefined, "audio rows carry no merge link");
 });
 
 test("GET /api/info honours format and maxHeight filters", async () => {
@@ -153,7 +150,6 @@ test("GET /api/link returns a video link plus its paired audio", async () => {
   assert.match(body.downloadUrl, /\/api\/download\?v=/);
   assert.ok(body.directUrl.startsWith("https:"));
   assert.ok(body.audioUrl, "a paired audio track is offered");
-  assert.match(body.mergeUrl, /\/api\/merge\?v=/);
 });
 
 test("GET /api/link format=audio returns an audio link", async () => {
@@ -203,21 +199,5 @@ test("unknown routes return the route list", async () => {
   const { status, body } = await j("/definitely-not-a-route");
   assert.equal(status, 404);
   assert.equal(body.ok, false);
-  assert.ok(body.routes.includes("GET /api/merge?v="), "route list mentions /api/merge");
   assert.ok(body.routes.includes("GET /api/search?q="), "route list mentions /api/search");
-});
-
-test("GET /api/merge muxes a video with audio", { skip: !process.env.MERGE_TEST }, async () => {
-  const info = (await j("/api/info?v=iss_85SWLYA")).body;
-  const smallest = info.formats
-    .filter((f) => f.kind === "video")
-    .sort((a, b) => a.contentLength - b.contentLength)[0];
-
-  const res = await fetch(`${BASE}/api/merge?v=iss_85SWLYA&video=${smallest.itag}`);
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get("content-type"), /^(video|application)\//);
-  const bytes = Buffer.from(await res.arrayBuffer());
-  assert.ok(bytes.length > 0, "muxed output is non-empty");
-  // MP4/WebM both carry an ftyp/webm box near the start.
-  assert.ok(bytes.length > 1000, "muxed output looks like a real file");
 });

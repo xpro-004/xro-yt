@@ -2,8 +2,7 @@
 
 A small Node.js + TypeScript HTTP server that, given a media id or URL, returns
 **direct and proxied download links** for every available audio/video track, plus
-keyword **search**, and can **mux** a video track with its matching audio into a
-single playable file.
+keyword **search**, and the full **YouTube Music** catalogue.
 
 The upstream API is called with the client identity recovered from the Vidmate
 APK, which (unlike most web/mobile clients) hands out the *entire* media file
@@ -14,9 +13,13 @@ hotlink problems) and supports `Range` seeking.
 ## Features
 
 - Keyword **search** with Video / Channel / Playlist filters and cursor paging.
+- **YouTube Music** catalogue: search (songs/videos/albums/artists/playlists),
+  home, artist (top songs + shelves), album, playlist, trending, radio/queue,
+  lyrics — see [`docs/API.md`](docs/API.md).
+- `GET /api` — a machine-readable **catalogue of every upstream API** the server
+  calls (client, params, proxy requirement, which routes use it).
 - Per-video **format listing** (itag, codec, size, bitrate, dimensions).
 - **Direct** upstream URL **and** a **proxied** URL for every track.
-- **Mux** endpoint that joins a video track with a matching audio track.
 - **Range / seek** support and `HEAD` on all streamed downloads.
 - Built-in **browser UI** at `/` (search box + format table).
 - Runs **behind Cloudflare WARP** in Docker, with automatic QUIC → HTTP/2
@@ -108,6 +111,12 @@ Leave `WARP_TRANSPORT=auto` — it will use QUIC where allowed and TCP elsewhere
 | `UPSTREAM_CLIENT_VERSION` | `1.02` | Client version |
 | `UPSTREAM_CLIENT_HEADER` | `101` | Client-name header value |
 | `UPSTREAM_USER_AGENT` | Safari UA | User-Agent sent upstream |
+| `MUSIC_HOST` | `https://music.youtube.com` | YouTube Music host |
+| `MUSIC_API_KEY` | built-in key | YouTube Music API key |
+| `MUSIC_CLIENT_NAME` | `WEB_REMIX` | Music client name |
+| `MUSIC_CLIENT_VERSION` | `1.20261115.14.00` | Music client version |
+| `MUSIC_CLIENT_HEADER` | `67` | Music client-name header |
+| `MUSIC_USER_AGENT` | Chrome UA | User-Agent sent to the music host |
 | `TIMEOUT_MS` | `30000` | Per-request timeout for API calls |
 | `RETRIES` | `6` | Player-call retry count |
 
@@ -133,7 +142,7 @@ A single page that takes a keyword **or** a link/id:
 - **Link / id** → loads that video directly.
 
 Each format row offers a **Direct URL** (with a Copy button), a **Download** link
-(proxied) and, for video rows, a **+audio** one-shot mux.
+(proxied) and an **Open** link.
 
 `GET /?v=<id|url>` pre-loads a video.
 
@@ -147,10 +156,64 @@ Each format row offers a **Direct URL** (with a Copy button), a **Download** lin
   "uptimeSeconds": 7,
   "client": "VISIONOS",
   "clientVersion": "1.02",
+  "musicClient": "WEB_REMIX",
   "proxy": "socks5://127.0.0.1:40000",
   "host": "https://<upstream-host>"
 }
 ```
+
+---
+
+### `GET /api` — upstream API catalogue
+
+Lists every upstream API the server calls, with the client, request shape, proxy
+requirement and which routes use it. `GET /api/info` without `v` returns the same
+catalogue.
+
+```json
+{
+  "ok": true,
+  "videoClient": "VISIONOS 1.02",
+  "musicClient": "WEB_REMIX 1.20261115.14.00",
+  "count": 7,
+  "apis": [
+    { "id": "player", "method": "POST", "host": "https://youtubei.googleapis.com",
+      "path": "/youtubei/v1/player", "client": "VISIONOS 1.02",
+      "request": "videoId, contentCheckOk, racyCheckOk, context.client{visitorData}",
+      "usedBy": ["/api/info", "/api/link", "/api/download", "/api/music/song"],
+      "requiresProxy": true, "verified": true }
+  ],
+  "routes": ["GET /", "GET /api/music/search?q=&type=", "…"]
+}
+```
+
+---
+
+### YouTube Music — `GET /api/music/*`
+
+Catalogue routes speak to `music.youtube.com` with the **WEB_REMIX** client.
+Track ids come back as `videoId`; feed them to the video routes to stream.
+
+| Route | Returns |
+|---|---|
+| `GET /api/music/search?q=&type=songs\|videos\|albums\|artists\|playlists` | `{ query, type, count, results[], continuation }` |
+| `GET /api/music/home` | `{ count, shelves[] }` |
+| `GET /api/music/artist?id=UC…` | `{ artist, topSongs[], albums[], singles[], videos[], related[], shelves[] }` |
+| `GET /api/music/artist/songs?id=UC…` | `{ header, items[], continuation }` |
+| `GET /api/music/album?id=MPREb…` | `{ header, items[], continuation }` |
+| `GET /api/music/playlist?id=VL…\|PL…[&continuation=]` | `{ header, items[], continuation }` |
+| `GET /api/music/song?id=<videoId>` | `{ song, expiresInSeconds, formatCount, links }` |
+| `GET /api/music/lyrics?id=<videoId>` | `{ lyrics, browseId }` |
+| `GET /api/music/trending` | `{ count, shelves[] }` |
+| `GET /api/music/radio?id=<videoId>[&continuation=]` | `{ header, items[], continuation }` |
+
+```bash
+curl "http://localhost:8787/api/music/search?q=believer&type=songs"
+curl "http://localhost:8787/api/music/artist?id=UCDxKh1gFWeYsqePvgVzmPoQ" | jq '.topSongs'
+curl "http://localhost:8787/api/music/trending" | jq '.shelves[].title'
+```
+
+Full request/response reference: [`docs/API.md`](docs/API.md).
 
 ---
 
@@ -188,7 +251,7 @@ curl "http://localhost:8787/api/search?q=tahsan&type=channel"
       "thumbnail": "https://<img-cdn>/vi/iss_85SWLYA/hq720.jpg",
       "url": "https://<upstream>/watch?v=iss_85SWLYA",
       "infoUrl": "http://localhost:8787/api/info?v=iss_85SWLYA",
-      "downloadUrl": "http://localhost:8787/api/merge?v=iss_85SWLYA",
+      "downloadUrl": "http://localhost:8787/api/link?v=iss_85SWLYA",
       "audioUrl": "http://localhost:8787/api/link?v=iss_85SWLYA&format=audio",
       "linkUrl": "http://localhost:8787/api/link?v=iss_85SWLYA"
     }
@@ -231,8 +294,8 @@ Playlist results:
 ### `GET /api/info?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]`
 
 Video metadata plus every available format. `format` and `maxHeight` filter the
-returned list. Each format carries a `directUrl` (upstream, short-lived), a
-`proxyUrl` (through this server) and — for video tracks — a `mergeUrl`.
+returned list. Each format carries a `directUrl` (upstream, short-lived) and a
+`proxyUrl` (through this server).
 
 ```bash
 curl "http://localhost:8787/api/info?v=64f_JnZuJPo"
@@ -267,8 +330,7 @@ curl "http://localhost:8787/api/info?v=64f_JnZuJPo&maxHeight=720"
       "width": 1920,
       "height": 1080,
       "directUrl": "https://<cdn-host>/videoplayback?...",
-      "proxyUrl": "http://localhost:8787/api/download?v=64f_JnZuJPo&itag=137",
-      "mergeUrl": "http://localhost:8787/api/merge?v=64f_JnZuJPo&video=137"
+      "proxyUrl": "http://localhost:8787/api/download?v=64f_JnZuJPo&itag=137"
     }
   ]
 }
@@ -305,8 +367,7 @@ curl "http://localhost:8787/api/link?v=64f_JnZuJPo&format=audio"
   "downloadUrl": "http://localhost:8787/api/download?v=64f_JnZuJPo&itag=136",
   "directUrl": "https://<cdn-host>/videoplayback?...",
   "audioUrl": "http://localhost:8787/api/download?v=64f_JnZuJPo&itag=140",
-  "audioDirectUrl": "https://<cdn-host>/videoplayback?...",
-  "mergeUrl": "http://localhost:8787/api/merge?v=64f_JnZuJPo&video=136"
+  "audioDirectUrl": "https://<cdn-host>/videoplayback?..."
 }
 ```
 
@@ -332,19 +393,6 @@ Response headers: `Accept-Ranges: bytes`, `Content-Type` from the track,
 
 ---
 
-### `GET /api/merge?v=<id|url>[&video=<itag>][&audio=<itag>][&dl=1]`
-
-Downloads a video track and a matching audio track server-side and muxes them
-into one file (`mp4` for H.264+AAC, `webm` for VP9+Opus). The audio container is
-matched to the video's so players do not choke on Opus-in-MP4. Omit `video` to
-let the server pick the highest-quality video track.
-
-```bash
-curl -L -o out.mp4  "http://localhost:8787/api/merge?v=64f_JnZuJPo&video=137&dl=1"
-curl -L -o best.mp4 "http://localhost:8787/api/merge?v=64f_JnZuJPo&dl=1"
-```
-
----
 
 ### Unknown routes
 
@@ -357,11 +405,21 @@ curl -L -o best.mp4 "http://localhost:8787/api/merge?v=64f_JnZuJPo&dl=1"
   "routes": [
     "GET /",
     "GET /health",
+    "GET /api",
     "GET /api/search?q=",
     "GET /api/info?v=",
     "GET /api/link?v=",
     "GET /api/download?v=&itag=",
-    "GET /api/merge?v="
+    "GET /api/music/search?q=&type=",
+    "GET /api/music/home",
+    "GET /api/music/artist?id=",
+    "GET /api/music/artist/songs?id=",
+    "GET /api/music/album?id=",
+    "GET /api/music/playlist?id=",
+    "GET /api/music/song?id=",
+    "GET /api/music/lyrics?id=",
+    "GET /api/music/trending",
+    "GET /api/music/radio?id="
   ]
 }
 ```
@@ -379,9 +437,6 @@ curl -s "$BASE/api/info?v=iss_85SWLYA" | jq '.formats[] | {itag,kind,quality,con
 
 # 3. grab audio only
 curl -L -o song.m4a "$BASE/api/link?v=iss_85SWLYA&format=audio" -o song.m4a 2>/dev/null
-
-# 4. mux best video + audio into one file
-curl -L -o movie.mp4 "$BASE/api/merge?v=iss_85SWLYA&dl=1"
 ```
 
 ## How it works
@@ -401,20 +456,21 @@ It needs network egress to the upstream API; on a datacenter host point `PROXY`
 at a SOCKS5 proxy (e.g. WARP).
 
 ```bash
-npm test                          # fast suite (16 checks)
-MERGE_TEST=1 npm test             # also downloads + muxes a real file
+npm test                          # full suite
 PROXY=socks5://127.0.0.1:40000 npm test
 ```
 
-The suite covers `/health`, search (all four types, paging without repeats, bad
-input), `/api/info` (link fields + filters), `/api/link` (video/audio/muxed
-fallback), `/api/download` (`HEAD`, `Range`, 400/404 paths), the 404 route list,
-and — with `MERGE_TEST=1` — a real `/api/merge` download.
+Two suites boot the built server and drive it over HTTP — no mocks:
+`test/api.test.mjs` covers the video API, and `test/music.test.mjs` covers the
+YouTube Music catalogue and the `/api` catalogue. Together: `/health`, search
+(all four types, paging without repeats, bad input), `/api/info` (link fields +
+filters), `/api/link` (video/audio/muxed fallback), `/api/download` (`HEAD`,
+`Range`, 400/404), `/api` + `/api/info` catalogue and every `/api/music/*` route.
 
 ## Notes & limits
 
-- Media URLs expire (`expiresInSeconds` in `/api/info`); `/api/download` and
-  `/api/merge` re-mint on each request, so links handed out by `/api/link` are
+- Media URLs expire (`expiresInSeconds` in `/api/info`); `/api/download`
+  re-mints on each request, so links handed out by `/api/link` are
   short-lived.
 - The 4 MiB chunk size is deliberate; larger single ranges stall.
 - For personal/research use. Respect the upstream platform's terms of service
