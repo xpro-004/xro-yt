@@ -73,8 +73,8 @@ test("GET /api lists every upstream API used", async () => {
   }
 });
 
-test("GET /api/info returns the site API reference", async () => {
-  const { status, body } = await j("/api/info?json");
+test("GET /api/doc returns the site API reference", async () => {
+  const { status, body } = await j("/api/doc?json");
   assert.equal(status, 200);
   assert.equal(body.ok, true);
   assert.ok(Array.isArray(body.routes) && body.routes.length >= 15, "documents every route");
@@ -83,7 +83,7 @@ test("GET /api/info returns the site API reference", async () => {
   assert.ok(Array.isArray(body.recipes) && body.recipes.length >= 3, "gives worked recipes");
 
   const paths = body.routes.map((r) => r.path);
-  for (const want of ["/api/search", "/api/video", "/api/link", "/api/download", "/api/music/search"]) {
+  for (const want of ["/api/search", "/api/info", "/api/link", "/api/download", "/api/music/search"]) {
     assert.ok(paths.includes(want), `docs mention ${want}`);
   }
   for (const r of body.routes) {
@@ -96,14 +96,14 @@ test("GET /api/info returns the site API reference", async () => {
   }
 });
 
-test("GET /api/info renders a page for browsers and JSON with ?json", async () => {
-  const page = await fetch(`${BASE}/api/info`, { headers: { accept: "text/html" } });
+test("GET /api/doc renders a page for browsers and JSON with ?json", async () => {
+  const page = await fetch(`${BASE}/api/doc`, { headers: { accept: "text/html" } });
   assert.match(page.headers.get("content-type"), /text\/html/);
   const html = await page.text();
   assert.match(html, /vidmate-yt-api/);
-  assert.match(html, /GET \/api\/video/, "the page lists routes");
+  assert.match(html, /GET \/api\/info/, "the page lists routes");
 
-  const json = await fetch(`${BASE}/api/info?json`, { headers: { accept: "text/html" } });
+  const json = await fetch(`${BASE}/api/doc?json`, { headers: { accept: "text/html" } });
   assert.match(json.headers.get("content-type"), /application\/json/);
 });
 

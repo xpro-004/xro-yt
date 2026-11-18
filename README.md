@@ -16,7 +16,7 @@ hotlink problems) and supports `Range` seeking.
 - **YouTube Music** catalogue: search (songs/videos/albums/artists/playlists),
   home, artist (top songs + shelves), album, playlist, trending, radio/queue,
   lyrics — see [`docs/API.md`](docs/API.md).
-- `GET /api/info` — the **API reference**: every route this server exposes, with
+- `GET /api/doc` — the **API reference**: every route this server exposes, with
   params and examples, as a page in a browser or JSON anywhere else.
 - `GET /api` — a machine-readable **catalogue of every upstream API** the server
   calls (client, params, proxy requirement, which routes use it).
@@ -166,7 +166,7 @@ Each format row offers a **Direct URL** (with a Copy button), a **Download** lin
 
 ---
 
-### `GET /api/info` — API reference
+### `GET /api/doc` — API reference
 
 The full developer reference: every route this server exposes, grouped as Meta,
 Video and Music, each with its parameters, a real example response and a ready
@@ -178,8 +178,8 @@ Opened in a browser it renders a page. Every other client gets JSON. Add `?json`
 to force JSON in a browser.
 
 ```bash
-curl "http://localhost:8787/api/info"
-curl "http://localhost:8787/api/info?json"
+curl "http://localhost:8787/api/doc"
+curl "http://localhost:8787/api/doc?json"
 ```
 
 ```json
@@ -196,19 +196,19 @@ curl "http://localhost:8787/api/info?json"
   "recipes": [
     { "goal": "Search and download a video",
       "steps": ["GET /api/search?q=<query>&type=video → take results[0].videoId",
-                "GET /api/video?v=<videoId> → pick a format by itag",
+                "GET /api/info?v=<videoId> → pick a format by itag",
                 "GET /api/download?v=<videoId>&itag=<itag> → stream the bytes"] }
   ],
   "count": 18,
   "routes": [
-    { "path": "/api/video",
+    { "path": "/api/info",
       "group": "Video",
       "summary": "Metadata and every format for one video, with direct and proxied links.",
       "params": [
         { "name": "v", "required": true, "description": "Video id or URL. Aliases: url, id." },
         { "name": "format", "required": false, "description": "video | audio | muxed." }
       ],
-      "example": "/api/video?v=W0DM5lcj6mw&format=audio",
+      "example": "/api/info?v=W0DM5lcj6mw&format=audio",
       "returns": "JSON",
       "response": { "ok": true, "count": 23, "video": { "videoId": "W0DM5lcj6mw" }, "formats": ["…"] },
       "notes": ["Use proxyUrl in clients; directUrl is bound to the server's egress IP."] }
@@ -225,7 +225,7 @@ built straight from this endpoint without calling anything else first.
 ### `GET /api` — upstream API catalogue
 
 Lists every upstream API the server calls, with the client, request shape, proxy
-requirement and which routes use it. `GET /api/info` serves the same list
+requirement and which routes use it. `GET /api/doc` serves the same list
 alongside this server's own routes.
 
 ```json
@@ -238,7 +238,7 @@ alongside this server's own routes.
     { "id": "player", "method": "POST", "host": "https://youtubei.googleapis.com",
       "path": "/youtubei/v1/player", "client": "VISIONOS 1.02",
       "request": "videoId, contentCheckOk, racyCheckOk, context.client{visitorData}",
-      "usedBy": ["/api/video", "/api/link", "/api/download", "/api/music/song"],
+      "usedBy": ["/api/info", "/api/link", "/api/download", "/api/music/song"],
       "requiresProxy": true, "verified": true }
   ],
   "routes": ["GET /", "GET /api/music/search?q=&type=", "…"]
@@ -308,7 +308,7 @@ curl "http://localhost:8787/api/search?q=tahsan&type=channel"
       "publishedTimeText": "7 years ago",
       "thumbnail": "https://<img-cdn>/vi/iss_85SWLYA/hq720.jpg",
       "url": "https://<upstream>/watch?v=iss_85SWLYA",
-      "infoUrl": "http://localhost:8787/api/video?v=iss_85SWLYA",
+      "infoUrl": "http://localhost:8787/api/info?v=iss_85SWLYA",
       "downloadUrl": "http://localhost:8787/api/link?v=iss_85SWLYA",
       "audioUrl": "http://localhost:8787/api/link?v=iss_85SWLYA&format=audio",
       "linkUrl": "http://localhost:8787/api/link?v=iss_85SWLYA"
@@ -349,16 +349,16 @@ Playlist results:
 
 ---
 
-### `GET /api/video?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]`
+### `GET /api/info?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]`
 
 Video metadata plus every available format. `format` and `maxHeight` filter the
 returned list. Each format carries a `directUrl` (upstream, short-lived) and a
 `proxyUrl` (through this server).
 
 ```bash
-curl "http://localhost:8787/api/video?v=64f_JnZuJPo"
-curl "http://localhost:8787/api/video?v=64f_JnZuJPo&format=audio"
-curl "http://localhost:8787/api/video?v=64f_JnZuJPo&maxHeight=720"
+curl "http://localhost:8787/api/info?v=64f_JnZuJPo"
+curl "http://localhost:8787/api/info?v=64f_JnZuJPo&format=audio"
+curl "http://localhost:8787/api/info?v=64f_JnZuJPo&maxHeight=720"
 ```
 
 ```json
@@ -464,9 +464,9 @@ Response headers: `Accept-Ranges: bytes`, `Content-Type` from the track,
     "GET /",
     "GET /health",
     "GET /api",
-    "GET /api/info",
+    "GET /api/doc",
     "GET /api/search?q=",
-    "GET /api/video?v=",
+    "GET /api/info?v=",
     "GET /api/link?v=",
     "GET /api/download?v=&itag=",
     "GET /api/music/search?q=&type=",
@@ -492,7 +492,7 @@ BASE=http://localhost:8787
 curl -s "$BASE/api/search?q=bangla+song&type=video" | jq '.results[0].videoId'
 
 # 2. inspect formats
-curl -s "$BASE/api/video?v=iss_85SWLYA" | jq '.formats[] | {itag,kind,quality,contentLength}'
+curl -s "$BASE/api/info?v=iss_85SWLYA" | jq '.formats[] | {itag,kind,quality,contentLength}'
 
 # 3. grab audio only
 curl -L -o song.m4a "$BASE/api/link?v=iss_85SWLYA&format=audio" -o song.m4a 2>/dev/null
@@ -521,15 +521,15 @@ PROXY=socks5://127.0.0.1:40000 npm test
 
 Two suites boot the built server and drive it over HTTP — no mocks:
 `test/api.test.mjs` covers the video API, and `test/music.test.mjs` covers the
-YouTube Music catalogue, the `/api` catalogue and the `/api/info` reference.
+YouTube Music catalogue, the `/api` catalogue and the `/api/doc` reference.
 Together: `/health`, search (all four types, paging without repeats, bad input),
-`/api/video` (link fields + filters), `/api/link` (video/audio/muxed fallback),
-`/api/download` (`HEAD`, `Range`, 400/404), `/api` + `/api/info` and every
+`/api/info` (link fields + filters), `/api/link` (video/audio/muxed fallback),
+`/api/download` (`HEAD`, `Range`, 400/404), `/api` + `/api/doc` and every
 `/api/music/*` route.
 
 ## Notes & limits
 
-- Media URLs expire (`expiresInSeconds` in `/api/video`); `/api/download`
+- Media URLs expire (`expiresInSeconds` in `/api/info`); `/api/download`
   re-mints on each request, so links handed out by `/api/link` are
   short-lived.
 - The 4 MiB chunk size is deliberate; larger single ranges stall.

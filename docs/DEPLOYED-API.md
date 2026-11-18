@@ -12,10 +12,9 @@ string on failure.
 Free-tier note: the instance sleeps after 15 minutes idle, so the first request
 after a quiet period waits roughly a minute for a cold start.
 
-> **Route move.** This branch moves the video metadata from `/api/info` to
-> `/api/video`, and turns `/api/info` into the API reference. Until the branch is
-> deployed, the live host serves the older layout: `/api/info?v=` returns video
-> metadata and `/api/video` is a 404.
+> **Route move.** The API reference lives at `/api/doc`. Video metadata stays on
+> `/api/info?v=`, where it always was. Until this branch is deployed, `/api/doc`
+> is a 404 on the live host.
 
 ---
 
@@ -26,9 +25,9 @@ after a quiet period waits roughly a minute for a cold start.
 | GET | `/` | HTML landing page (browser only) | yes |
 | GET | `/health` | Liveness and current client/proxy config | yes |
 | GET | `/api` | Upstream-API catalogue (JSON) | yes |
-| GET | `/api/info` | API reference after this branch; video metadata before it | metadata |
+| GET | `/api/info` | Video metadata and every format | yes |
 | GET | `/api/search` | YouTube search — videos, channels, playlists | yes |
-| GET | `/api/video` | Video metadata (moved out of `/api/info`) | 404 |
+| GET | `/api/doc` | API reference (page or JSON) | 404 |
 | GET | `/api/link` | Pick one playable format and return its URLs | yes |
 | GET | `/api/download` | Stream the media bytes (Range supported) | yes |
 | GET | `/api/music/*` | Ten YouTube Music routes | yes |
@@ -59,21 +58,19 @@ because a datacenter IP is blocked by `googlevideo`.
 
 ---
 
-## `GET /api/info`
+## `GET /api/doc`
 
-Before this branch, on the live host: video metadata and every format, the
-payload described under `/api/video` below.
-
-After this branch: the API reference. It lists every route with its params, an
-example and the response kind, plus the upstream catalogue. Browsers get a page;
-other clients get JSON. `?json` forces JSON in a browser.
+The API reference. Lists every route with its params, a real sample response and
+a `curl` line, plus the response conventions, worked recipes and the upstream
+catalogue. Browsers get a page; other clients get JSON. `?json` forces JSON in a
+browser.
 
 ---
 
-## `GET /api/video`
+## `GET /api/info`
 
-After this branch. This is the payload `/api/info` returns on the live host
-today.
+Video metadata and every format. Live on the host today; unchanged by this
+branch.
 
 | Param | Required | Default | Notes |
 | --- | --- | --- | --- |
@@ -139,7 +136,7 @@ back to page through results.
 ## `GET /api/link`
 
 Resolves one format and returns ready-to-use URLs. Prefer this over
-`/api/video` when the caller just wants something playable.
+`/api/info` when the caller just wants something playable.
 
 | Param | Required | Default | Notes |
 | --- | --- | --- | --- |
@@ -161,7 +158,7 @@ at, and the only one that returns a file rather than JSON.
 | Param | Required | Default | Notes |
 | --- | --- | --- | --- |
 | `v` | yes | — | Video id or URL. Aliases: `url`, `id`. |
-| `itag` | yes | — | Format to stream, from `/api/video`. |
+| `itag` | yes | — | Format to stream, from `/api/info`. |
 | `dl` | no | — | Present at all sends `Content-Disposition: attachment`. |
 
 Example: `/api/download?v=W0DM5lcj6mw&itag=140`. Range requests answer `206`.
@@ -201,7 +198,7 @@ Unknown routes return the route list:
 {
   "ok": false,
   "error": "not found",
-  "routes": ["GET /", "GET /health", "GET /api", "GET /api/info", "GET /api/search?q=", "GET /api/video?v=", "GET /api/link?v=", "GET /api/download?v=&itag="]
+  "routes": ["GET /", "GET /health", "GET /api", "GET /api/doc", "GET /api/search?q=", "GET /api/info?v=", "GET /api/link?v=", "GET /api/download?v=&itag="]
 }
 ```
 

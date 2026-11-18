@@ -12,15 +12,15 @@ catalogue.
 
 ## Layout
 
-- `src/index.ts` — routes `/`, `/health`, `/api` (catalogue), `/api/info`
-  (API reference), `/api/search`, `/api/video`, `/api/link`, `/api/download`;
-  mounts `/api/music`.
+- `src/index.ts` — routes `/`, `/health`, `/api` (catalogue), `/api/doc`
+  (API reference), `/api/search`, `/api/info` (video info), `/api/link`,
+  `/api/download`; mounts `/api/music`.
 - `src/music-routes.ts` — `/api/music/*` HTTP layer.
 - `src/music.ts` — YouTube Music client (WEB_REMIX): browse/search/next + parsers.
 - `src/innertube.ts` — video client (VISIONOS): search + player.
 - `src/catalog.ts` — `GET /api` upstream-API catalogue; keep in sync with the
   clients.
-- `src/docs.ts` — `GET /api/info` reference: route list + upstream catalogue,
+- `src/docs.ts` — `GET /api/doc` reference: route list + upstream catalogue,
   rendered as a page or JSON.
 - `src/config.ts` — two clients: `client` (VISIONOS, media) and `music`
   (WEB_REMIX, catalogue), both env-overridable.
@@ -45,13 +45,13 @@ signed googlevideo URLs 403.
 - `src/music.ts` — YouTube Music catalogue (WEB_REMIX browse/search/next + parsers).
 - `src/music-routes.ts` — `/api/music/*` handlers.
 - `src/catalog.ts` — `GET /api` upstream-API catalogue.
-- `src/docs.ts` — `GET /api/info` API reference (page + JSON).
+- `src/docs.ts` — `GET /api/doc` API reference (page + JSON).
 - `src/stream.ts` — 4 MiB Range-chunked proxying of a signed media URL.
 - `src/home.ts` — HTML UI served at `/`.
 - `src/index.ts` — Express routes and error handling.
 
-Routes: `GET /`, `/health`, `/api`, `/api/info`, `/api/search?q=&type=&continuation=`,
-`/api/video?v=&format=&maxHeight=`, `/api/link?v=&itag=&quality=&format=`,
+Routes: `GET /`, `/health`, `/api`, `/api/doc`, `/api/search?q=&type=&continuation=`,
+`/api/info?v=&format=&maxHeight=`, `/api/link?v=&itag=&quality=&format=`,
 `/api/download?v=&itag=&dl=1`, and
 `/api/music/{search,home,artist,artist/songs,album,playlist,song,lyrics,trending,radio}`.
 
@@ -59,7 +59,7 @@ Routes: `GET /`, `/health`, `/api`, `/api/info`, `/api/search?q=&type=&continuat
 
 - Every JSON response carries `ok: true|false`; failures also carry `error`.
 - 502 upstream/parse failures, 400 bad input, 404 missing format.
-- `/api/info` renders a page in a browser and JSON elsewhere; `?json` forces
+- `/api/doc` renders a page in a browser and JSON elsewhere; `?json` forces
   JSON. Other `/api/*` routes answer JSON, or the UI for browsers when required
   params are missing.
 - `v` accepts a bare id or URL (`watch?v=`, `youtu.be`, `shorts/`, `embed/`,

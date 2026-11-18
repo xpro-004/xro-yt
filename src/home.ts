@@ -165,7 +165,7 @@ async function load(q) {
   $("msg").textContent = "Fetching formats…";
   $("vid").classList.remove("show");
   try {
-    const r = await fetch("/api/video?v=" + encodeURIComponent(q));
+    const r = await fetch("/api/info?v=" + encodeURIComponent(q));
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || "failed");
     DATA = d;

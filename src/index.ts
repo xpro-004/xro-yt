@@ -79,9 +79,9 @@ app.get("/api", (_req, res) => {
       "GET /",
       "GET /health",
       "GET /api",
-      "GET /api/info",
+      "GET /api/doc",
       "GET /api/search?q=",
-      "GET /api/video?v=",
+      "GET /api/info?v=",
       "GET /api/link?v=",
       "GET /api/download?v=&itag=",
       "GET /api/music/search?q=&type=",
@@ -101,11 +101,11 @@ app.get("/api", (_req, res) => {
 app.use("/api/music", musicRouter);
 
 /**
- * GET /api/info — the site's API reference. Browsers get a page listing every
+ * GET /api/doc — the site's API reference. Browsers get a page listing every
  * route; everything else gets the same content as JSON. Add `?json` to force
  * JSON in a browser.
  */
-app.get("/api/info", (req: Request, res: Response) => {
+app.get("/api/doc", (req: Request, res: Response) => {
   const base = baseUrl(req);
   if (wantsHtml(req)) {
     res.type("html").send(renderDocs(base));
@@ -115,13 +115,22 @@ app.get("/api/info", (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/video?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]
+ * GET /api/info?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]
  * Returns metadata plus every format with direct and proxied download links.
+ * Without `v`: browsers get the UI, other clients get a pointer to /api/doc.
  */
-app.get("/api/video", async (req: Request, res: Response) => {
+app.get("/api/info", async (req: Request, res: Response) => {
   const input = String(req.query.v ?? req.query.url ?? req.query.id ?? "").trim();
   if (!input) {
-    res.status(400).json({ ok: false, error: "missing query param: v (video id or URL)" });
+    if (wantsHtml(req)) {
+      res.type("html").send(renderHome());
+      return;
+    }
+    res.json({
+      ok: true,
+      hint: "pass ?v=<id|url> for video info; see /api/doc for the full reference",
+      docs: `${baseUrl(req)}/api/doc`,
+    });
     return;
   }
   try {
@@ -179,7 +188,7 @@ app.get("/api/search", async (req: Request, res: Response) => {
         return {
           ...r,
           url: `https://www.youtube.com/watch?v=${r.videoId}`,
-          infoUrl: `${base}/api/video?v=${encodeURIComponent(r.videoId)}`,
+          infoUrl: `${base}/api/info?v=${encodeURIComponent(r.videoId)}`,
           /** Best playable track, proxied (VISIONOS returns no muxed track). */
           downloadUrl: `${base}/api/link?v=${encodeURIComponent(r.videoId)}`,
           /** Audio-only, proxied. */
@@ -331,9 +340,9 @@ app.use((req, res) => {
       "GET /",
       "GET /health",
       "GET /api",
-      "GET /api/info",
+      "GET /api/doc",
       "GET /api/search?q=",
-      "GET /api/video?v=",
+      "GET /api/info?v=",
       "GET /api/link?v=",
       "GET /api/download?v=&itag=",
       "GET /api/music/search?q=&type=",

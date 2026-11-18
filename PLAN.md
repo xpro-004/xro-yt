@@ -56,15 +56,15 @@ input, 404 no match, 502 upstream failure, `?json` to force JSON.
 | `GET /api/music/artist/songs?id=UC…` | M5 | `browse MPAD<channelId>` |
 | `GET /api/music/album?id=MPREb…` | M6 | track list + header |
 | `GET /api/music/playlist?id=VL…\|PL…[&continuation=]` | M7, M10 | track list + continuation |
-| `GET /api/music/song?id=<videoId>` | M4, M8 | metadata + a link to `/api/video` for streams |
+| `GET /api/music/song?id=<videoId>` | M4, M8 | metadata + a link to `/api/info` for streams |
 | `GET /api/music/lyrics?id=<videoId>` | M9 | resolves `MPLYt…`, returns lyrics text |
 | `GET /api/music/trending[?region=US]` | M13 | charts + explore shelves |
 | `GET /api/music/radio?id=<videoId>` | M14 | `next?playlistId=RDAMVM<id>` queue + paging |
 | `GET /api` | new | **catalog of every upstream API the server uses** (see §5) |
-| `GET /api/info` | changed | API reference: every route + the upstream catalog, page or JSON |
-| `GET /api/video?v=` | new | the old `/api/info?v=` video metadata (moved) |
+| `GET /api/doc` | new | API reference: every route + the upstream catalog, page or JSON |
+| `GET /api/info?v=` | unchanged | video metadata (kept on `/api/info`) |
 
-Streaming for music tracks reuses the existing `/api/video`, `/api/download`,
+Streaming for music tracks reuses the existing `/api/info`, `/api/download`,
 The video routes are unchanged (VISIONOS already returns full URLs for music ids).
 
 ## 4. Implementation steps
@@ -100,7 +100,7 @@ The video routes are unchanged (VISIONOS already returns full URLs for music ids
 
 ### Phase 3 — catalog + docs
 7. New `src/catalog.ts`: a single source of truth describing every upstream API
-   the server calls (see §5). Serve it from `GET /api`; `GET /api/info` (new
+   the server calls (see §5). Serve it from `GET /api`; `GET /api/doc` (new
    `src/docs.ts`) adds this server's own routes around it.
 8. `docs/API.md`: full route reference (params, response shape, examples, error
    codes, WARP requirement). Link it from `README.md`; extend the README route

@@ -72,7 +72,7 @@ const ROUTES: SiteRoute[] = [
           host: "https://youtubei.googleapis.com",
           path: "/youtubei/v1/player",
           client: "VISIONOS 1.02",
-          usedBy: ["/api/video", "/api/link", "/api/download", "/api/music/song"],
+          usedBy: ["/api/info", "/api/link", "/api/download", "/api/music/song"],
           requiresProxy: true,
           verified: true,
         },
@@ -82,26 +82,26 @@ const ROUTES: SiteRoute[] = [
     notes: ["The same catalogue is embedded in this page as JSON under `apis`."],
   },
   {
-    path: "/api/info",
+    path: "/api/doc",
     group: "Meta",
     summary: "This page: every route on this server, with params, examples and responses.",
     params: [{ name: "json", required: false, description: "Force the JSON form in a browser." }],
-    example: "/api/info",
+    example: "/api/doc",
     returns: "HTML or JSON",
     response: {
       ok: true,
       name: "vidmate-yt-api",
       base: "https://xro-yt-api.onrender.com",
       conventions: { success: 'Every JSON response carries "ok": true.', failure: '"ok": false with an "error" string.' },
-      recipes: [{ goal: "Search and download a video", steps: ["GET /api/search?q=<query>", "GET /api/video?v=<id>", "GET /api/download?v=<id>&itag=<itag>"] }],
+      recipes: [{ goal: "Search and download a video", steps: ["GET /api/search?q=<query>", "GET /api/info?v=<id>", "GET /api/download?v=<id>&itag=<itag>"] }],
       count: 18,
       routes: [
         {
-          path: "/api/video",
+          path: "/api/info",
           group: "Video",
           summary: "Metadata and every format for one video, with direct and proxied links.",
           params: [{ name: "v", required: true, description: "Video id or URL. Aliases: url, id." }],
-          example: "/api/video?v=W0DM5lcj6mw&format=audio",
+          example: "/api/info?v=W0DM5lcj6mw&format=audio",
           returns: "JSON",
         },
       ],
@@ -143,7 +143,7 @@ const ROUTES: SiteRoute[] = [
           publishedTimeText: "7 years ago",
           thumbnail: "https://.../mqdefault.jpg",
           url: "https://www.youtube.com/watch?v=W0DM5lcj6mw",
-          infoUrl: "https://xro-yt-api.onrender.com/api/video?v=W0DM5lcj6mw",
+          infoUrl: "https://xro-yt-api.onrender.com/api/info?v=W0DM5lcj6mw",
           linkUrl: "https://xro-yt-api.onrender.com/api/link?v=W0DM5lcj6mw",
           downloadUrl: "https://xro-yt-api.onrender.com/api/link?v=W0DM5lcj6mw",
           audioUrl: "https://xro-yt-api.onrender.com/api/link?v=W0DM5lcj6mw&format=audio",
@@ -157,7 +157,7 @@ const ROUTES: SiteRoute[] = [
     ],
   },
   {
-    path: "/api/video",
+    path: "/api/info",
     group: "Video",
     summary: "Metadata and every format for one video, with direct and proxied links.",
     params: [
@@ -165,7 +165,7 @@ const ROUTES: SiteRoute[] = [
       { name: "format", required: false, description: "video | audio | muxed." },
       { name: "maxHeight", required: false, description: "Drop video tracks taller than this." },
     ],
-    example: "/api/video?v=W0DM5lcj6mw&format=audio",
+    example: "/api/info?v=W0DM5lcj6mw&format=audio",
     returns: "JSON",
     response: {
       ok: true,
@@ -228,7 +228,7 @@ const ROUTES: SiteRoute[] = [
       audioDirectUrl: "https://...googlevideo.com/...",
     },
     notes: [
-      "Simpler than `/api/video` when you just want something playable.",
+      "Simpler than `/api/info` when you just want something playable.",
       "`format=muxed` falls back to the best video-only track, because VISIONOS returns no muxed track.",
     ],
   },
@@ -238,7 +238,7 @@ const ROUTES: SiteRoute[] = [
     summary: "Stream the media bytes with Range support. Add &dl=1 to force a file download.",
     params: [
       { name: "v", required: true, description: "Video id or URL. Aliases: url, id." },
-      { name: "itag", required: true, description: "Format to stream, taken from /api/video." },
+      { name: "itag", required: true, description: "Format to stream, taken from /api/info." },
       { name: "dl", required: false, description: "Present at all sends an attachment disposition." },
     ],
     example: "/api/download?v=W0DM5lcj6mw&itag=140",
@@ -283,7 +283,7 @@ const ROUTES: SiteRoute[] = [
     },
     notes: [
       "Songs, videos and albums carry `videoId` or `browseId`; artists carry `browseId` only.",
-      "Feed a `videoId` to `/api/music/song`, `/api/video` or `/api/link` to stream it.",
+      "Feed a `videoId` to `/api/music/song`, `/api/info` or `/api/link` to stream it.",
     ],
   },
   {
@@ -481,7 +481,7 @@ const ROUTES: SiteRoute[] = [
       expiresInSeconds: 21540,
       formatCount: 23,
       links: {
-        info: "https://xro-yt-api.onrender.com/api/video?v=W0DM5lcj6mw",
+        info: "https://xro-yt-api.onrender.com/api/info?v=W0DM5lcj6mw",
         download: "https://xro-yt-api.onrender.com/api/link?v=W0DM5lcj6mw&format=audio",
       },
     },
@@ -513,7 +513,7 @@ const RECIPES = [
     goal: "Search and download a video",
     steps: [
       "GET /api/search?q=<query>&type=video → take results[0].videoId",
-      "GET /api/video?v=<videoId> → pick a format by itag",
+      "GET /api/info?v=<videoId> → pick a format by itag",
       "GET /api/download?v=<videoId>&itag=<itag> → stream the bytes",
     ],
   },
@@ -726,7 +726,7 @@ ${apis
   .join("\n")}
   </div>
 
-  <div class="note">Media URLs expire; each response reports <code>expiresInSeconds</code>. This page is also available as JSON at <code>${esc(base)}/api/info?json</code>.</div>
+  <div class="note">Media URLs expire; each response reports <code>expiresInSeconds</code>. This page is also available as JSON at <code>${esc(base)}/api/doc?json</code>.</div>
 </div>
 </body>
 </html>`;
