@@ -65,7 +65,7 @@ test("GET /api/search returns video results with ready-made links", async () => 
   assert.ok(v.thumbnail?.startsWith("http"), "thumbnail");
   assert.match(v.downloadUrl, /\/api\/link\?v=/);
   assert.match(v.audioUrl, /format=audio/);
-  assert.match(v.infoUrl, /\/api\/info\?v=/);
+  assert.match(v.infoUrl, /\/api\/video\?v=/);
   assert.equal(typeof v.lengthSeconds, "number");
 });
 
@@ -119,8 +119,8 @@ test("GET /api/search rejects a bad type and a missing query", async () => {
   assert.equal(noQuery.body.ok, false);
 });
 
-test("GET /api/info lists formats with direct and proxied links", async () => {
-  const { body } = await j("/api/info?v=iss_85SWLYA");
+test("GET /api/video lists formats with direct and proxied links", async () => {
+  const { body } = await j("/api/video?v=iss_85SWLYA");
   assert.equal(body.ok, true);
   assert.ok(body.count > 0);
   assert.ok(body.video.videoId === "iss_85SWLYA");
@@ -136,8 +136,8 @@ test("GET /api/info lists formats with direct and proxied links", async () => {
   assert.ok(audio, "an audio-only format is present");
 });
 
-test("GET /api/info honours format and maxHeight filters", async () => {
-  const { body } = await j("/api/info?v=iss_85SWLYA&format=audio&maxHeight=720");
+test("GET /api/video honours format and maxHeight filters", async () => {
+  const { body } = await j("/api/video?v=iss_85SWLYA&format=audio&maxHeight=720");
   assert.equal(body.ok, true);
   assert.ok(body.formats.length > 0);
   assert.ok(body.formats.every((f) => f.kind === "audio"), "only audio rows");
@@ -167,7 +167,7 @@ test("GET /api/link format=muxed falls back to a video track", async () => {
 });
 
 test("GET /api/download supports HEAD and Range", async () => {
-  const info = (await j("/api/info?v=iss_85SWLYA")).body;
+  const info = (await j("/api/video?v=iss_85SWLYA")).body;
   const audio = info.formats.find((f) => f.kind === "audio");
 
   const head = await fetch(`${BASE}/api/download?v=iss_85SWLYA&itag=${audio.itag}`, {

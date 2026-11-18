@@ -1,7 +1,7 @@
 /**
  * Machine-readable catalogue of every upstream API this server calls, with the
  * client, params and proxy requirement for each. Served from `GET /api` (and
- * `GET /api/info` with no `v`). Keep this in sync with `innertube.ts`,
+ * `GET /api`). Keep this in sync with `innertube.ts`,
  * `music.ts` and `stream.ts`.
  */
 import { config } from "./config.js";
@@ -38,7 +38,7 @@ export function upstreamCatalog(): UpstreamApi[] {
       client: visionos,
       auth: config.apiKey,
       request: "{}",
-      usedBy: ["/api/search", "/api/info", "/api/link", "/api/download"],
+      usedBy: ["/api/search", "/api/video", "/api/link", "/api/download"],
       requiresProxy: true,
       verified: true,
       note: "Returns visitorData, sent back as the X-Goog-Visitor-Id header. Without it the player answers LOGIN_REQUIRED.",
@@ -51,7 +51,7 @@ export function upstreamCatalog(): UpstreamApi[] {
       client: visionos,
       auth: config.apiKey,
       request: "videoId, contentCheckOk, racyCheckOk, context.client{visitorData}",
-      usedBy: ["/api/info", "/api/link", "/api/download", "/api/music/song"],
+      usedBy: ["/api/video", "/api/link", "/api/download", "/api/music/song"],
       requiresProxy: true,
       verified: true,
       note: "VISIONOS serves the whole file with a plain url (no signatureCipher) and needs no PO token — but only from a non-datacenter IP.",

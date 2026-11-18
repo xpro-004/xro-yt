@@ -73,11 +73,38 @@ test("GET /api lists every upstream API used", async () => {
   }
 });
 
-test("GET /api/info without v returns the catalog", async () => {
+test("GET /api/info returns the site API reference", async () => {
   const { status, body } = await j("/api/info?json");
   assert.equal(status, 200);
   assert.equal(body.ok, true);
-  assert.ok(Array.isArray(body.apis) && body.apis.length >= 5);
+  assert.ok(Array.isArray(body.routes) && body.routes.length >= 15, "documents every route");
+  assert.ok(Array.isArray(body.apis) && body.apis.length >= 5, "lists the upstream APIs");
+  assert.ok(body.conventions && body.conventions.success, "states the response contract");
+  assert.ok(Array.isArray(body.recipes) && body.recipes.length >= 3, "gives worked recipes");
+
+  const paths = body.routes.map((r) => r.path);
+  for (const want of ["/api/search", "/api/video", "/api/link", "/api/download", "/api/music/search"]) {
+    assert.ok(paths.includes(want), `docs mention ${want}`);
+  }
+  for (const r of body.routes) {
+    assert.ok(r.summary && r.example && r.returns, `${r.path} is described`);
+    assert.ok(Array.isArray(r.params), `${r.path} lists params`);
+    assert.ok(["Meta", "Video", "Music"].includes(r.group), `${r.path} has a group`);
+    // Every JSON route ships a real example response so a client author can see
+    // the shape without calling it.
+    if (r.returns === "JSON") assert.ok(r.response, `${r.path} carries a sample response`);
+  }
+});
+
+test("GET /api/info renders a page for browsers and JSON with ?json", async () => {
+  const page = await fetch(`${BASE}/api/info`, { headers: { accept: "text/html" } });
+  assert.match(page.headers.get("content-type"), /text\/html/);
+  const html = await page.text();
+  assert.match(html, /vidmate-yt-api/);
+  assert.match(html, /GET \/api\/video/, "the page lists routes");
+
+  const json = await fetch(`${BASE}/api/info?json`, { headers: { accept: "text/html" } });
+  assert.match(json.headers.get("content-type"), /application\/json/);
 });
 
 test("GET /api/music/search returns songs and albums", async () => {

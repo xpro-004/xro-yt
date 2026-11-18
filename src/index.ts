@@ -5,6 +5,7 @@ import { streamMedia } from "./stream.js";
 import { renderHome } from "./home.js";
 import { musicRouter } from "./music-routes.js";
 import { upstreamCatalog } from "./catalog.js";
+import { docsPayload, renderDocs } from "./docs.js";
 
 const app = express();
 app.use(express.json());
@@ -78,8 +79,9 @@ app.get("/api", (_req, res) => {
       "GET /",
       "GET /health",
       "GET /api",
+      "GET /api/info",
       "GET /api/search?q=",
-      "GET /api/info?v=",
+      "GET /api/video?v=",
       "GET /api/link?v=",
       "GET /api/download?v=&itag=",
       "GET /api/music/search?q=&type=",
@@ -99,20 +101,27 @@ app.get("/api", (_req, res) => {
 app.use("/api/music", musicRouter);
 
 /**
- * GET /api/info?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]
- * Returns metadata plus every format with direct and proxied download links.
- * Opened in a browser without `v`, shows the UI instead.
+ * GET /api/info — the site's API reference. Browsers get a page listing every
+ * route; everything else gets the same content as JSON. Add `?json` to force
+ * JSON in a browser.
  */
-app.get("/api/info", async (req: Request, res: Response) => {
+app.get("/api/info", (req: Request, res: Response) => {
+  const base = baseUrl(req);
+  if (wantsHtml(req)) {
+    res.type("html").send(renderDocs(base));
+    return;
+  }
+  res.json(docsPayload(base));
+});
+
+/**
+ * GET /api/video?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]
+ * Returns metadata plus every format with direct and proxied download links.
+ */
+app.get("/api/video", async (req: Request, res: Response) => {
   const input = String(req.query.v ?? req.query.url ?? req.query.id ?? "").trim();
   if (!input) {
-    if (wantsHtml(req)) {
-      res.type("html").send(renderHome());
-      return;
-    }
-    // No `v`: describe the upstream APIs instead of erroring.
-    const apis = upstreamCatalog();
-    res.json({ ok: true, hint: "pass ?v=<id|url> for video info", count: apis.length, apis });
+    res.status(400).json({ ok: false, error: "missing query param: v (video id or URL)" });
     return;
   }
   try {
@@ -170,7 +179,7 @@ app.get("/api/search", async (req: Request, res: Response) => {
         return {
           ...r,
           url: `https://www.youtube.com/watch?v=${r.videoId}`,
-          infoUrl: `${base}/api/info?v=${encodeURIComponent(r.videoId)}`,
+          infoUrl: `${base}/api/video?v=${encodeURIComponent(r.videoId)}`,
           /** Best playable track, proxied (VISIONOS returns no muxed track). */
           downloadUrl: `${base}/api/link?v=${encodeURIComponent(r.videoId)}`,
           /** Audio-only, proxied. */
@@ -322,8 +331,9 @@ app.use((req, res) => {
       "GET /",
       "GET /health",
       "GET /api",
+      "GET /api/info",
       "GET /api/search?q=",
-      "GET /api/info?v=",
+      "GET /api/video?v=",
       "GET /api/link?v=",
       "GET /api/download?v=&itag=",
       "GET /api/music/search?q=&type=",

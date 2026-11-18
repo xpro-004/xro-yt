@@ -29,13 +29,20 @@ link/id loads that video's formats. `GET /?v=<id|url>` pre-loads a video.
   "clientVersion": "1.02", "musicClient": "WEB_REMIX", "proxy": "socks5://…", "host": "https://youtubei.googleapis.com" }
 ```
 
+### `GET /api/info[?json]`
+The developer reference. Lists every route this server exposes, grouped Meta /
+Video / Music, each with its params, a real sample response and a `curl` line.
+Also carries `conventions` (success/failure/auth/network), `recipes` (worked
+end-to-end flows) and `apis` (the upstream catalogue). Browsers get a page;
+other clients get JSON. `?json` forces JSON.
+
 ### `GET /api`
 Catalogue of every upstream API this server calls (id, host, path, client,
 request shape, `requiresProxy`, `usedBy`, `verified`), plus the route list.
 ```json
 { "ok": true, "count": 7, "apis": [ { "id": "player", "host": "https://youtubei.googleapis.com",
   "path": "/youtubei/v1/player", "client": "VISIONOS 1.02", "requiresProxy": true,
-  "usedBy": ["/api/info", "…"], "verified": true } ], "routes": ["GET /", "…"] }
+  "usedBy": ["/api/video", "…"], "verified": true } ], "routes": ["GET /", "…"] }
 ```
 
 ### `GET /api/search?q=<query>[&type=video|channel|playlist|all][&continuation=<token>]`
@@ -43,9 +50,8 @@ Keyword search. `type` defaults to `video`. Pass the returned `continuation` to
 page. Each video result carries `url`, `infoUrl`, `downloadUrl`, `audioUrl`,
 `linkUrl`.
 
-### `GET /api/info?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]`
-Metadata plus every format with `directUrl` and `proxyUrl`. Without `v` it
-returns the `/api` catalogue.
+### `GET /api/video?v=<id|url>[&format=video|audio|muxed][&maxHeight=1080]`
+Metadata plus every format with `directUrl` and `proxyUrl`.
 
 ### `GET /api/link?v=<id|url>[&itag=][&quality=best|1080|720|360|worst][&format=video|audio|muxed|any]`
 A single best-matching `downloadUrl` plus the paired audio link.
@@ -57,7 +63,7 @@ Streams the media through the server with `Range`/`HEAD` support. `dl=1` sets a
 ## YouTube Music API — `/api/music/*`
 
 Catalogue routes speak to `music.youtube.com` with the **WEB_REMIX** client.
-Track ids come back as `videoId`; feed them to the video routes (`/api/info`,
+Track ids come back as `videoId`; feed them to the video routes (`/api/video`,
 `/api/link`, `/api/download`) to stream. Every response includes
 `client`, `clientVersion`, `host` for the music client.
 

@@ -161,7 +161,7 @@ musicRouter.get("/song", (req: Request, res: Response) =>
       expiresInSeconds: info.expiresInSeconds,
       formatCount: info.formats.length,
       links: {
-        info: `${base}/api/info?v=${vid}`,
+        info: `${base}/api/video?v=${vid}`,
         download: `${base}/api/link?v=${vid}&format=audio`,
       },
     });

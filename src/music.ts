@@ -2,7 +2,7 @@
  * YouTube Music catalogue client (WEB_REMIX). All of this talks to
  * `music.youtube.com/youtubei/v1/{browse,search,next}` and parses the
  * `music*Renderer` shapes. Media URLs are NOT minted here — the music routes
- * hand track ids to the existing VISIONOS player path (`/api/info` & friends).
+ * hand track ids to the existing VISIONOS player path (`/api/video` & friends).
  *
  * Everything here needs a non-datacenter egress: without a proxy (WARP) the
  * catalogue answers "No results" for songs/albums and the home page comes back
