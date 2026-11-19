@@ -76,7 +76,9 @@ export function request(
         },
       );
       req.on("error", reject);
-      const timeout = opts.timeoutMs ?? 30000;
+      // `setTimeout(0)` means "never time out", so a falsy or negative value has
+      // to fall back to the default rather than being passed through.
+      const timeout = opts.timeoutMs && opts.timeoutMs > 0 ? opts.timeoutMs : 30000;
       req.setTimeout(timeout, () => req.destroy(new Error(`timeout after ${timeout}ms`)));
       if (opts.body) req.write(opts.body);
       req.end();

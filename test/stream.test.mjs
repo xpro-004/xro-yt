@@ -13,6 +13,9 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 
+/** Keep the stall test fast; read by config.ts when stream.js is imported. */
+process.env.CHUNK_TIMEOUT_MS = "1000";
+
 /** 6 MiB of deterministic bytes, so short reads are detectable. */
 const MEDIA = Buffer.alloc(6 << 20);
 for (let i = 0; i < MEDIA.length; i++) MEDIA[i] = i & 0xff;
@@ -171,6 +174,33 @@ test("streamMedia fails cleanly, before any headers, when the origin is dead", a
   assert.equal(res.statusCode, 0);
   assert.equal(res.headers["content-length"], undefined);
   assert.equal(res.body().length, 0);
+});
+
+test("streamMedia gives up on an upstream that accepts the request and sends nothing", async () => {
+  // The original bug: the chunk timeout was passed as 0, which Node reads as
+  // "never time out". A silent upstream then held the response open forever and
+  // the browser showed an endless spinner.
+  const stalled = http.createServer(() => {
+    /* accept the request, never answer */
+  });
+  stalled.listen(0, "127.0.0.1");
+  await once(stalled, "listening");
+  const port = stalled.address().port;
+  const res = harness();
+
+  const started = Date.now();
+  try {
+    await assert.rejects(
+      () => streamMedia(`http://127.0.0.1:${port}/videoplayback`, undefined, MEDIA.length, res),
+      /upstream media unavailable/,
+    );
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 15000, `must abandon the stalled upstream, took ${elapsed}ms`);
+    assert.equal(res.body().length, 0);
+  } finally {
+    stalled.closeAllConnections();
+    stalled.close();
+  }
 });
 
 test("streamMedia rejects an upstream that ignores Range instead of corrupting output", async () => {

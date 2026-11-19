@@ -35,6 +35,13 @@ export const config = {
   retries: Number(process.env.RETRIES ?? 6),
 
   /**
+   * Idle timeout for a single media range request (ms). googlevideo often
+   * accepts a request and then sends nothing; without a deadline that request
+   * pins the response open forever.
+   */
+  chunkTimeoutMs: Number(process.env.CHUNK_TIMEOUT_MS ?? 20000),
+
+  /**
    * Client used for the player call.
    *
    * VISIONOS is the key finding: unlike IOS / ANDROID_VR / WEB, it serves the

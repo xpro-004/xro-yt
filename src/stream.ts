@@ -20,7 +20,7 @@ const MAX_TRIES = 8;
  * sends nothing; without a deadline that request pins the response open forever
  * and the client sits on a spinner with no bytes and no error.
  */
-const CHUNK_TIMEOUT_MS = 20000;
+const CHUNK_TIMEOUT_MS = config.chunkTimeoutMs;
 
 interface ClientRange {
   start: number;

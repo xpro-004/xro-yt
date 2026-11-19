@@ -233,7 +233,9 @@ app.get("/api/link", async (req: Request, res: Response) => {
     const wantKind = req.query.format ? String(req.query.format) : "video";
     const quality = String(req.query.quality ?? "best").toLowerCase();
 
-    let candidates = info.formats;
+    // Copy: this array is sorted below and getVideoInfo() hands out a cached,
+    // shared VideoInfo, so sorting in place would reorder it for every caller.
+    let candidates = [...info.formats];
     if (itag) {
       candidates = candidates.filter((f) => f.itag === itag);
     } else {
