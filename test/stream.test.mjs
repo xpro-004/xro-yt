@@ -226,6 +226,28 @@ test("streamMedia rejects an upstream that ignores Range instead of corrupting o
   }
 });
 
+test("streamMedia treats a suffix range as the last N bytes", async () => {
+  const url = `http://127.0.0.1:${originPort}/videoplayback`;
+  const res = harness();
+
+  await streamMedia(url, "bytes=-1000", MEDIA.length, res);
+  assert.equal(res.statusCode, 206);
+  assert.equal(res.headers["content-range"], `bytes ${MEDIA.length - 1000}-${MEDIA.length - 1}/${MEDIA.length}`);
+  const body = res.body();
+  assert.equal(body.length, 1000);
+  assert.ok(body.equals(MEDIA.subarray(MEDIA.length - 1000)), "must return the tail, not the head");
+});
+
+test("streamMedia answers a range past the end of the file with 416", async () => {
+  const url = `http://127.0.0.1:${originPort}/videoplayback`;
+  const res = harness();
+
+  await streamMedia(url, `bytes=${MEDIA.length + 10}-`, MEDIA.length, res);
+  assert.equal(res.statusCode, 416);
+  assert.equal(res.headers["content-range"], `bytes */${MEDIA.length}`);
+  assert.equal(res.body().length, 0);
+});
+
 test("streamMedia answers HEAD with headers and no body", async () => {
   const url = `http://127.0.0.1:${originPort}/videoplayback`;
   const res = harness();

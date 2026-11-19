@@ -26,17 +26,27 @@ interface ClientRange {
   start: number;
   end: number;
   partial: boolean;
+  /** The header asked for bytes outside the file, which HTTP answers with 416. */
+  unsatisfiable?: boolean;
 }
 
 function parseRange(header: string | undefined, total: number): ClientRange {
-  if (!header) return { start: 0, end: total - 1, partial: false };
+  const whole: ClientRange = { start: 0, end: total - 1, partial: false };
+  if (!header) return whole;
   const m = /bytes=(\d*)-(\d*)/.exec(header);
-  if (!m) return { start: 0, end: total - 1, partial: false };
+  if (!m) return whole;
   const [, s, e] = m;
-  let start = s ? Number(s) : 0;
+  // "bytes=-500" is a suffix range: the last 500 bytes, not a range from 0.
+  if (!s && e) {
+    const want = Number(e);
+    if (!Number.isFinite(want) || want <= 0) return { ...whole, partial: true, unsatisfiable: true };
+    return { start: Math.max(0, total - want), end: total - 1, partial: true };
+  }
+  const start = s ? Number(s) : 0;
   let end = e ? Number(e) : total - 1;
-  if (Number.isNaN(start)) start = 0;
-  if (Number.isNaN(end) || end >= total) end = total - 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return whole;
+  if (end >= total) end = total - 1;
+  if (start >= total || start > end) return { ...whole, partial: true, unsatisfiable: true };
   return { start, end, partial: true };
 }
 
@@ -92,7 +102,12 @@ export async function streamMedia(
   contentType = "video/mp4",
   headOnly = false,
 ): Promise<void> {
-  const { start, end, partial } = parseRange(rangeHeader, total);
+  // Without a byte count we cannot promise Content-Length, and guessing produces
+  // an empty 200 that the browser reports as a silent, unplayable file.
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error("upstream did not report a media size");
+  }
+  const { start, end, partial, unsatisfiable } = parseRange(rangeHeader, total);
   const length = end - start + 1;
 
   const writeHeaders = () => {
@@ -108,6 +123,14 @@ export async function streamMedia(
       res.status(200);
     }
   };
+
+  if (unsatisfiable) {
+    res.setHeader("Content-Range", `bytes */${total}`);
+    res.setHeader("Accept-Ranges", "bytes");
+    res.status(416);
+    res.end();
+    return;
+  }
 
   if (headOnly) {
     writeHeaders();
