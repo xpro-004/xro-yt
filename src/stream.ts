@@ -129,11 +129,12 @@ export async function streamMedia(
 
   let pos = start + first.length;
   // Fetch one chunk ahead: a single sequential chain tops out around 1 MB/s
-  // because each request pays its own round-trip to googlevideo.
+  // because each request pays its own round-trip to googlevideo. Mid-stream
+  // chunks still retry, since a single stall would otherwise kill playback.
   let ahead: Promise<Buffer | undefined> | undefined;
   while (pos <= end) {
     if (res.writableEnded || res.destroyed) return;
-    const buf = await (ahead ?? fetchRange(mediaUrl, pos, Math.min(pos + CHUNK - 1, end)));
+    const buf = await (ahead ?? fetchChunk(mediaUrl, pos, Math.min(pos + CHUNK - 1, end), 4));
     ahead = undefined;
     if (!buf) {
       // The client already holds part of the body and was promised `length`
@@ -145,7 +146,7 @@ export async function streamMedia(
     pos += buf.length;
     if (pos <= end) {
       const nextEnd = Math.min(pos + CHUNK - 1, end);
-      ahead = fetchRange(mediaUrl, pos, nextEnd);
+      ahead = fetchChunk(mediaUrl, pos, nextEnd, 4);
     }
     if (!res.write(buf)) {
       await new Promise<void>((resolve) => res.once("drain", () => resolve()));
