@@ -1,3 +1,4 @@
+import http from "node:http";
 import https from "node:https";
 import { SocksProxyAgent } from "socks-proxy-agent";
 
@@ -43,11 +44,12 @@ export function request(
     const go = (target: string, left: number) => {
       const u = new URL(target);
       const agent = agentFor(opts.proxy ?? "");
-      const req = https.request(
+      const transport = u.protocol === "http:" ? http : https;
+      const req = transport.request(
         {
           protocol: u.protocol,
           hostname: u.hostname,
-          port: u.port || 443,
+          port: u.port || (u.protocol === "http:" ? 80 : 443),
           path: u.pathname + u.search,
           method: opts.method ?? "GET",
           headers: opts.headers,

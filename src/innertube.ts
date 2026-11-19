@@ -324,7 +324,17 @@ export async function searchYouTube(
   };
 }
 
+/**
+ * visitorData is a stable per-device token; re-fetching it on every player and
+ * search call doubles the proxy round-trips for no benefit.
+ */
+let visitorCache: { value: string; at: number } | undefined;
+const VISITOR_TTL_MS = 6 * 60 * 60 * 1000;
+
 async function getVisitorData(): Promise<string> {
+  if (visitorCache && Date.now() - visitorCache.at < VISITOR_TTL_MS) {
+    return visitorCache.value;
+  }
   const body = JSON.stringify({
     context: { client: { clientName: config.client.clientName, clientVersion: config.client.clientVersion, hl: "en", gl: "US" } },
   });
@@ -340,6 +350,7 @@ async function getVisitorData(): Promise<string> {
   );
   const vd = data.responseContext?.visitorData;
   if (!vd) throw new Error("visitor_id response missing visitorData");
+  visitorCache = { value: vd, at: Date.now() };
   return vd;
 }
 
@@ -373,11 +384,42 @@ function toFormatInfo(f: RawFormat): FormatInfo | undefined {
 }
 
 /**
+ * Player responses are cached for a fraction of their signed-URL lifetime.
+ * Browsers issue a burst of range requests for one video (metadata probe, then
+ * sequential chunks, then seek storms) and each would otherwise pay for a fresh
+ * visitor_id + player round-trip through the proxy before the first byte.
+ */
+const infoCache = new Map<string, { at: number; value: VideoInfo }>();
+const INFO_CACHE_MAX = 200;
+
+function cacheGet(videoId: string): VideoInfo | undefined {
+  const hit = infoCache.get(videoId);
+  if (!hit) return undefined;
+  const ttlMs = Math.max(60_000, Math.min(hit.value.expiresInSeconds * 1000 * 0.5, 3_600_000));
+  if (Date.now() - hit.at > ttlMs) {
+    infoCache.delete(videoId);
+    return undefined;
+  }
+  return hit.value;
+}
+
+function cacheSet(videoId: string, value: VideoInfo): void {
+  if (infoCache.size >= INFO_CACHE_MAX) {
+    const oldest = infoCache.keys().next().value;
+    if (oldest !== undefined) infoCache.delete(oldest);
+  }
+  infoCache.set(videoId, { at: Date.now(), value });
+}
+
+/**
  * Call the InnerTube player API with the configured client and return parsed
  * video info plus per-format direct media URLs.
  */
 export async function getVideoInfo(rawIdOrUrl: string): Promise<VideoInfo> {
   const videoId = parseVideoId(rawIdOrUrl);
+
+  const cached = cacheGet(videoId);
+  if (cached) return cached;
 
   let lastErr: unknown;
   for (let attempt = 1; attempt <= config.retries; attempt++) {
@@ -416,7 +458,7 @@ export async function getVideoInfo(rawIdOrUrl: string): Promise<VideoInfo> {
 
       if (formats.length === 0) throw new Error("no downloadable formats returned");
 
-      return {
+      const info: VideoInfo = {
         videoId,
         title: pr.videoDetails?.title ?? "",
         author: pr.videoDetails?.author ?? "",
@@ -427,6 +469,8 @@ export async function getVideoInfo(rawIdOrUrl: string): Promise<VideoInfo> {
         expiresInSeconds: Number(sd.expiresInSeconds ?? 0),
         formats,
       };
+      cacheSet(videoId, info);
+      return info;
     } catch (err) {
       lastErr = err;
       await new Promise((r) => setTimeout(r, 1000 * attempt));

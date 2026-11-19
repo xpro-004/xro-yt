@@ -3,15 +3,24 @@ import { config } from "./config.js";
 import { request } from "./http.js";
 
 /**
- * Google Video Streaming will serve a media URL reliably only in modest ranges
- * (a single long-lived request stalls after ~8-12 MiB), but it will happily
- * serve any number of small sequential ranges on the same URL. So we page the
- * file ourselves in 4 MiB chunks and concatenate them onto the response, while
- * still honouring the client's own Range header so seeking works.
+ * googlevideo serves a media URL reliably only in modest ranges — a single
+ * long-lived request tends to stall once it passes ~8-12 MiB — but it will serve
+ * any number of small sequential ranges on the same URL. So we page the file in
+ * chunks and concatenate them onto the response, while honouring the client's own
+ * Range header so seeking works.
  */
 
 const CHUNK = 4 << 20; // 4 MiB
+/** Small first chunk: the browser cannot render a frame until bytes arrive. */
+const FIRST_CHUNK = 512 << 10; // 512 KiB
 const MAX_TRIES = 8;
+
+/**
+ * Idle timeout for one chunk. googlevideo sometimes accepts a request and then
+ * sends nothing; without a deadline that request pins the response open forever
+ * and the client sits on a spinner with no bytes and no error.
+ */
+const CHUNK_TIMEOUT_MS = 20000;
 
 interface ClientRange {
   start: number;
@@ -31,26 +40,46 @@ function parseRange(header: string | undefined, total: number): ClientRange {
   return { start, end, partial: true };
 }
 
+/**
+ * One range request. Returns whatever bytes arrived — possibly fewer than asked
+ * for, since googlevideo can cut a response short — or undefined when the
+ * request failed or timed out.
+ */
+async function fetchRange(url: string, start: number, end: number): Promise<Buffer | undefined> {
+  try {
+    const res = await request(url, {
+      headers: { "User-Agent": config.client.userAgent, Range: `bytes=${start}-${end}` },
+      proxy: config.proxy,
+      timeoutMs: CHUNK_TIMEOUT_MS,
+      maxRedirects: 5,
+    });
+    // We always send a Range, so a 206 is the only response whose body starts at
+    // `start`. A 200 means the header was ignored and the body is the whole file
+    // from byte 0 — buffering that for an offset would corrupt the output and
+    // exhaust memory, so treat it as a failed chunk.
+    if (res.status !== 206) return undefined;
+    return res.body.length > 0 ? res.body : undefined;
+  } catch {
+    /* caller retries */
+  }
+  return undefined;
+}
+
+/**
+ * One chunk, retried until the budget runs out. Returns undefined only when the
+ * chunk could not be read at all. `tries` is lower for the first chunk so a dead
+ * upstream fails fast instead of holding the client for the whole budget.
+ */
 async function fetchChunk(
   url: string,
   start: number,
   end: number,
+  tries = MAX_TRIES,
 ): Promise<Buffer | undefined> {
-  for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
-    try {
-      const res = await request(url, {
-        headers: { "User-Agent": config.client.userAgent, Range: `bytes=${start}-${end}` },
-        proxy: config.proxy,
-        timeoutMs: 0,
-        maxRedirects: 5,
-      });
-      if ((res.status === 200 || res.status === 206) && res.body.length > 0) {
-        return res.body;
-      }
-    } catch {
-      /* retry */
-    }
-    await new Promise((r) => setTimeout(r, 500 * attempt));
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    const buf = await fetchRange(url, start, end);
+    if (buf) return buf;
+    if (attempt < tries) await new Promise((r) => setTimeout(r, 300 * attempt));
   }
   return undefined;
 }
@@ -66,36 +95,61 @@ export async function streamMedia(
   const { start, end, partial } = parseRange(rangeHeader, total);
   const length = end - start + 1;
 
-  res.setHeader("Accept-Ranges", "bytes");
-  res.setHeader("Content-Type", contentType);
-  res.setHeader("Cache-Control", "no-store");
-  if (partial) {
-    res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
-    res.setHeader("Content-Length", String(length));
-    res.status(206);
-  } else {
-    res.setHeader("Content-Length", String(total));
-    res.status(200);
-  }
+  const writeHeaders = () => {
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "no-store");
+    if (partial) {
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+      res.setHeader("Content-Length", String(length));
+      res.status(206);
+    } else {
+      res.setHeader("Content-Length", String(total));
+      res.status(200);
+    }
+  };
 
   if (headOnly) {
+    writeHeaders();
     res.end();
     return;
   }
 
-  let pos = start;
+  // Read the first chunk before committing headers. Once Content-Length is on
+  // the wire the status is fixed, so a dead upstream would leave the client
+  // waiting on a body that never arrives; here it can still become a clean 502.
+  const firstEnd = Math.min(start + FIRST_CHUNK - 1, end);
+  const first = await fetchChunk(mediaUrl, start, firstEnd, 3);
+  if (!first) throw new Error("upstream media unavailable");
+
+  writeHeaders();
+  if (!res.write(first)) {
+    await new Promise<void>((resolve) => res.once("drain", () => resolve()));
+  }
+
+  let pos = start + first.length;
+  // Fetch one chunk ahead: a single sequential chain tops out around 1 MB/s
+  // because each request pays its own round-trip to googlevideo.
+  let ahead: Promise<Buffer | undefined> | undefined;
   while (pos <= end) {
     if (res.writableEnded || res.destroyed) return;
-    const chunkEnd = Math.min(pos + CHUNK - 1, end);
-    const buf = await fetchChunk(mediaUrl, pos, chunkEnd);
+    const buf = await (ahead ?? fetchRange(mediaUrl, pos, Math.min(pos + CHUNK - 1, end)));
+    ahead = undefined;
     if (!buf) {
-      if (!res.writableEnded) res.end();
+      // The client already holds part of the body and was promised `length`
+      // bytes, so ending cleanly would leave it waiting forever. Dropping the
+      // socket surfaces a truncated transfer instead of an endless spinner.
+      res.destroy();
       return;
+    }
+    pos += buf.length;
+    if (pos <= end) {
+      const nextEnd = Math.min(pos + CHUNK - 1, end);
+      ahead = fetchRange(mediaUrl, pos, nextEnd);
     }
     if (!res.write(buf)) {
       await new Promise<void>((resolve) => res.once("drain", () => resolve()));
     }
-    pos = chunkEnd + 1;
   }
   res.end();
 }
